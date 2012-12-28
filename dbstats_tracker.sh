@@ -39,9 +39,8 @@ index_file="$path/index.csv"
 
 run()
 {
-	psql -d $db -U $dbuser -At -c "copy (select relname,pg_relation_size(c.oid) as size from pg_class c left join pg_namespace n on n.oid=c.relnamespace where n.nspname <> 'pg_catalog' and n.nspname <> 'information_schema' and n.nspname !~ '^pg_toast' and pg_table_is_visible(c.oid) and relkind='r' order by size desc ) to '$table_file' DELIMITER ' ' CSV"
-	psql -d $db -U $dbuser -At -c "copy (select relname,pg_relation_size(c.oid) as size from pg_class c left join pg_namespace n on n.oid=c.relnamespace where n.nspname <> 'pg_catalog' and n.nspname <> 'information_schema' and n.nspname !~ '^pg_toast' and pg_table_is_visible(c.oid) and relkind='i' order by size desc ) to '$index_file' DELIMITER ' ' CSV"
-			
+	psql -d $db -U $dbuser -At -c "copy (select t1.relname,pg_relation_size(oid) as size from pg_class t1, pg_stat_user_tables t2 where t1.relname=t2.relname order by size desc ) to '$table_file' DELIMITER ' ' CSV"
+	psql -d $db -U $dbuser -At -c "copy (select t2.indexrelname,pg_relation_size(oid) as size from pg_class t1, pg_stat_user_indexes t2 where t1.relname=t2.indexrelname order by size desc ) to '$index_file' DELIMITER ' ' CSV"
 }
 
 if [ $# -eq 0 ]
@@ -83,8 +82,8 @@ do
 				table=$(echo $line | awk 'BEGIN{FS=" "}{print $1}')
 				size=$(echo $line | awk 'BEGIN{FS=" "}{print $2}')
 
-				newsize=`psql -d $db -U $dbuser -At -c "select pg_relation_size(c.oid) as size from pg_class c left join pg_namespace n on n.oid=c.relnamespace where relname='$table'"`
-			
+				newsize=`psql -d $db -U $dbuser -At -c "select pg_relation_size(c.oid) as size from pg_class c where relname='$table'"`
+				echo $table
 				if [[ $size > 0 ]]
 				then
 					ratio=`echo "scale = 2; 100.0*($newsize-$size)/$size" | bc | awk '{printf("%.2f\n",$1)}'`
@@ -102,7 +101,6 @@ do
 							sizepost="GB"
 							newsize=`echo "scale = 2; $newsize/1024" | bc | awk '{printf("%.2f",$1)}'`
 						fi
-
 						echo "$table %$ratio ($newsize $sizepost)" >> $tmp_file
 					fi
 				else
@@ -121,10 +119,10 @@ do
 			echo "-------------------------------" >> $file
 
 			while read line ; do
-				table=$(echo $line | awk 'BEGIN{FS=" "}{print $1}')
+				index=$(echo $line | awk 'BEGIN{FS=" "}{print $1}')
 				size=$(echo $line | awk 'BEGIN{FS=" "}{print $2}')
-				newsize=`psql -d $db -U $dbuser -At -c "select pg_relation_size(c.oid) as size from pg_class c left join pg_namespace n on n.oid=c.relnamespace where relname='$table'"`
-				
+				newsize=`psql -d $db -U $dbuser -At -c "select pg_relation_size(c.oid) as size from pg_class c where relname='$index'"`
+				echo $index
 				if [[ $size > 0 ]]
 				then
 					ratio=`echo "scale = 2; 100.0*($newsize-$size)/$size*1.0" | bc | awk '{printf("%.2f\n",$1)}'`
@@ -141,12 +139,11 @@ do
 							sizepost="GB"
 							newsize=`echo "scale = 2; $newsize/1024" | bc | awk '{printf("%.2f",$1)}'`
 						fi
-						echo "$table %$ratio ($newsize $sizepost)" >> $tmp_file
+						echo "$index %$ratio ($newsize $sizepost)" >> $tmp_file
 					fi
 				else
 					ratio=0
 				fi
-
 			done < $index_file
 			
 			if [ -e $tmp_file ]
@@ -155,6 +152,7 @@ do
 				rm $tmp_file
 			fi
 			run
+			cat $file
 			mail -s "$db DB Growth Ratios" $email < $file
 			;;
 		*)

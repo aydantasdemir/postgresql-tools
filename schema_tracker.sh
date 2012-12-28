@@ -49,17 +49,17 @@ do
 			exit
 			;;
 		"-run")
-			pg_dump -s $db -f $dump_file
+			pg_dump -s $db -U $dbuser -f $dump_file
 			;;
 		"-update")
 			if [ ! -e $dump_file ]
 			then
 				echo "ERROR: $db not exist. It will be created.."
-				pg_dump -s $db -f $dump_file
+				pg_dump -s $db -U $dbuser -f $dump_file
 				exit
 			fi
 
-			pg_dump -s $db -f $new_dump_file 
+			pg_dump -s $db -U $dbuser -f $new_dump_file 
 			diff $dump_file $new_dump_file > $diff_file
 			if [  -s $diff_file ]
 			then
