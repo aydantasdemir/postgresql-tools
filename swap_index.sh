@@ -1,8 +1,13 @@
 #!/bin/bash
 
-DB="testdb"
-INDEX="$1"
-TBLSPC="warehouse_idx_tblspc"
+################################################################
+## USAGE:            swap_index.sh index_name                 ##
+## This replaces the existed index with the newly created one.##
+################################################################
+
+DB="testdb" ## Database name
+INDEX="$1"  ## index name by giving as parameter
+TBLSPC="warehouse_idx_tblspc" ## The index will be created in this tablespace
 
 
 CREATE_INDEX=`psql -U postgres $DB -At -c "SELECT indexdef FROM pg_indexes WHERE indexname='$INDEX'"`
