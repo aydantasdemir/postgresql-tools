@@ -17,7 +17,7 @@ OUTPUT="/dev/null"
 
 function throw_exception()
 {
-	if [ $? > 0 ]; then echo "ERROR: $1"; exit;	fi
+	if [ $? > 0 ]; then echo "ERROR: $1"; exit; fi
 }
 
 echo " ## Hot standby replication server is going to be settled down ##"
@@ -33,3 +33,4 @@ echo "   --> postgresql.conf & recovery.conf is copied to data directory"
 chown -R postgres: $DATADIR/* || throw_exception "Owner of data directory cannot be changed!"
 echo "   --> The owner of data directory setted to postgres"
 echo " ## Hot standby PostgreSQL Server is ready to start! ##"
+
