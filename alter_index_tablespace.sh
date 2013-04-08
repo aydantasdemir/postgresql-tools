@@ -19,8 +19,8 @@ echo -n "Are you sure? [y/n]: "
 read answer
 if [ "$answer" != "y" ]
 then
-	echo "Script is terminated!"
-	exit;
+    echo "Script is terminated!"
+    exit;
 fi
 
 INDEXES=$(psql -U postgres $DB -At -c "select indexrelname from pg_stat_user_indexes;" )
@@ -28,8 +28,8 @@ throw_exception "Index list cannot be retrived!"
 
 for INDEX in $INDEXES
 do
-	echo "   --> ALTER INDEX $INDEX SET TABLESPACE $TBLSPC;"
-	psql -U postgres $DB -c "ALTER INDEX $INDEX SET TABLESPACE $TBLSPC;" || throw_exception "asdf"
+    echo "   --> ALTER INDEX $INDEX SET TABLESPACE $TBLSPC;"
+    psql -U postgres $DB -c "ALTER INDEX $INDEX SET TABLESPACE $TBLSPC;" || throw_exception "asdf"
 done
 
 echo " ## Succesfully completed! All indexes are placed in \"$TBLSPC\" ##"
