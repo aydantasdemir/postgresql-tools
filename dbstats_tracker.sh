@@ -101,7 +101,7 @@ do
                             sizepost="GB"
                             newsize=`echo "scale = 2; $newsize/1024" | bc | awk '{printf("%.2f",$1)}'`
                         fi
-                        echo "$table %$ratio ($newsize $sizepost)" >> $tmp_file
+                        echo "$table % $ratio ($newsize $sizepost)" >> $tmp_file
                     fi
                 else
                     ratio=0
@@ -110,7 +110,7 @@ do
 
             if [ -e $tmp_file ]
             then
-                cat $tmp_file | sort -k 2 -r >> $file
+                cat $tmp_file | sort -k 3 -n -r >> $file
                 rm $tmp_file
             fi
             
@@ -139,7 +139,7 @@ do
                             sizepost="GB"
                             newsize=`echo "scale = 2; $newsize/1024" | bc | awk '{printf("%.2f",$1)}'`
                         fi
-                        echo "$index %$ratio ($newsize $sizepost)" >> $tmp_file
+                        echo "$index % $ratio ($newsize $sizepost)" >> $tmp_file
                     fi
                 else
                     ratio=0
@@ -148,7 +148,7 @@ do
             
             if [ -e $tmp_file ]
             then
-                cat $tmp_file | sort -k 2 -r >> $file
+                cat $tmp_file | sort -k 3 -n -r >> $file
                 rm $tmp_file
             fi
             run
