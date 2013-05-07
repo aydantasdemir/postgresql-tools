@@ -1,15 +1,12 @@
 #!/bin/bash
 
-DB="travegodb"
+DB="zizigo"
 SERVER=$(hostname)
 BCKP_PATH="/data/archives/backups"
-EMAIL="travego@localhost"
+EMAIL="erkin.cakar@markafoni.com"
 
 find /data/archives/backups/ -name "*.dump" -exec rm {} \;
-pg_dump -U postgres -F c -b -f "$BCKP_PATH/$(date +%a)-$DB.dump" $DB
-if [ $? > 0 ]
-then
-   ls -lh $BCKP_PATH/$(date +%a)-$DB.dump | mail -s "PROBLEM: $DB($SERVER) dump" $EMAIL
-   exit;
-fi
-ls -lh $BCKP_PATH/$(date +%a)-$DB.dump | mail -s "$DB($SERVER) dump complete" $EMAIL
+
+pg_dump -U postgres -F c -b -f "$BCKP_PATH/$(date +%a)-$DB.dump" $DB 2> /tmp/bckscrpt.log \
+&& ls -lh $BCKP_PATH/$(date +%a)-$DB.dump | mail -s "$DB($SERVER) dump complete" $EMAIL \
+|| cat /tmp/bckscrpt.log | mail -s "PROBLEM: $DB($SERVER) dump" $EMAIL
