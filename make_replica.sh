@@ -29,7 +29,7 @@ do
     if ! [ -e $TBLSPC ]
     then
         mkdir -p $TBLSPC ||throw_ex "$TBLSPC directory cannot be created"
-        chown postgres: $TBLSPC ||throw_ex "$TBLSPC owner cannot be changed to postgres"
+        chown -R postgres: $TBLSPC ||throw_ex "$TBLSPC owner cannot be changed to postgres"
         echo "   [CREATED]: The directory \"$TBLSPC\""
     else
         rm -rf $TBLSPC/* ||throw_ex "$TBLCSPC cannot be deleted"
