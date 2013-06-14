@@ -1,133 +1,115 @@
 #!/bin/bash
 
+################################################################################
+### Partition a table according to given interval parameter (1 day, 1 month) ###
+### Create partition tables, inserts rows, creates triggers                  ###
+### ERKIN CAKAR @ markafoni - 2013                                           ###
+################################################################################
 
+
+## USER DEFINED SETTING PARAMETERS ##
 DB="travegodb"
 DBUSER="postgres"
-BASETABLE="$1"
 BASETABLE="part"
-DIVISION_COLUMN="$2"
 DIVISION_COLUMN="created_at"
 INTERVAL="1 month"
+DEBUG=0 #DEBUG MODE
+## USER DEFINED SETTING PARAMETERS ##
+
+
+TYPE=`echo $INTERVAL | cut -d" " -f2`
 TMP_BASETABLE="$BASETABLE"_tmp
-
 TRIGGER=$BASETABLE"_insert_trigger"
-
 START_DATE=`psql -U $DBUSER -d $DB -At -c "SELECT MIN($DIVISION_COLUMN) FROM $BASETABLE"`
 END_DATE=`psql -U $DBUSER -d $DB -At -c "SELECT MAX($DIVISION_COLUMN) FROM $BASETABLE"`
+TRIGGER_FLAG=1
 
-echo "Table: \"$BASETABLE\" DATE RANGE BETWEEN \"$START_DATE\" AND \"$END_DATE\" "
+throw_ex() { 
+#if [ $? > 0 ]; then echo "ERROR: $1"; exit; fi 
+if [ $? > 0 ]; then if [ $DEBUG -eq 0 ]; then echo "ERROR: $1"; exit; fi fi 
+}
 
 # Find the min and max date from the table
-DATE_RANGE=`psql -U $DBUSER -d $DB -At -c "select to_char(generate_series('$START_DATE'::timestamp , '$END_DATE'::timestamp, '$INTERVAL'),'YYYY-MM-DD');"`
+DATE_RANGE=`psql -U $DBUSER -d $DB -At -c "SELECT to_char(generate_series('$START_DATE'::timestamp , '$END_DATE'::timestamp, '$INTERVAL'),'YYYY-MM-DD');"` ||throw_ex "Getting Date range array from DB"
 
-echo $DATE_RANGE
+echo  '\nTABLE: '$BASETABLE' \nDATE BETWEEN: '$START_DATE' AND '$END_DATE' \nINTERVAL: '$INTERVAL' \nTOTAL TABLES: '${#DATE_RANGE}'\n'
+ 
+TRIGGER_STATEMENT_START="
+CREATE OR REPLACE FUNCTION $TRIGGER()
+RETURNS TRIGGER AS \$\$
+BEGIN"
 
-echo "CREATE TRIGGER $BASETABLE""_trigger BEFORE INSERT on $BASETABLE for each row execute procedure $BASETABLE""_insert_trigger();"
+TRIGGER_STATEMENT_END="
+    END IF;
+RETURN NULL;
+END;
+\$\$
+LANGUAGE plpgsql;COMMIT;
+"
 
-TRIGGER_STATEMENT="CREATE OR REPLACE FUNCTION $TRIGGER()
-        RETURNS TRIGGER AS \$\$
-        DECLARE
-            current_partition text;
-        BEGIN
-        asd
-        asd
-        "
-exit
-
+TRIGGER_STATEMENT_BODY=""
+ 
 # RENAME BASE TABLE AS TMP TABLE
-psql -U $DBUSER $DB -c "ALTER TABLE $BASETABLE RENAME TO $TMP_BASETABLE;"
+psql -U $DBUSER $DB -c "ALTER TABLE $BASETABLE RENAME TO $TMP_BASETABLE;" > /dev/null ||throw_ex "Cannot renamed the table $BASETABLE to $TMP_BASETABLE" 
+echo "[ALTER]  TABLE \"$BASETABLE\" RENAMED TO \"$TMP_BASETABLE\""
 # CREATE CLEAN BASE TABLE
-psql -U $DBUSER $DB -c "CREATE TABLE $BASETABLE ( LIKE $TMP_BASETABLE INCLUDING ALL ) ;"
-# CREATE TRIGGER 
-psql -U $DBUSER $DB -c "CREATE TRIGGER $BASETABLE""_trigger BEFORE INSERT on $BASETABLE for each row execute procedure $BASETABLE""_insert_trigger();"
+psql -U $DBUSER $DB -c "CREATE TABLE $BASETABLE ( LIKE $TMP_BASETABLE INCLUDING ALL ) ;" > /dev/null ||throw_ex "The table \"$BASETABLE\" cannot be created"
+echo "[CREATE] TABLE \"$BASETABLE\" ( LIKE \"$TMP_BASETABLE\" INCLUDING ALL )\n"
 
 
-
-## CREATE Partition tables according to given INTERVAL parameter
+## CREATE Partition tables and INSERT values to partitioned tables according to given INTERVAL parameter
 for DATE in $DATE_RANGE
 do 
     YEAR=`echo $DATE | cut -d"-" -f1`
     MONTH=`echo $DATE | cut -d"-" -f2`
-    #DAY=`echo $DATE | cut -d"-" -f3`
-    #suffix="_y$YEAR""m$MONTH""d$DAY"   day month olarak düzenle
-    suffix="_y$YEAR""m$MONTH"
+    if [ "$TYPE" = "day" ]
+    then
+        DAY=`echo $DATE | cut -d"-" -f3`
+        suffix="_$YEAR""_$MONTH""_$DAY"
+    elif [ "$TYPE" = "month" ]
+    then
+        suffix="_y$YEAR""m$MONTH"
+    else
+        echo "Partition type should be day or month"
+        exit
+    fi
 
-    DATE_STR=`echo "date --date='$DATE $INTERVAL ' +%Y-%m-%d"`
-    NEXT_DATE=`eval $DATE_STR`
+    #DATE_STR=`echo "date --date='$DATE $INTERVAL ' +%Y-%m-%d"`
+    NEXT_DATE=`eval "date --date='$DATE $INTERVAL ' +%Y-%m-%d"`
     
-    CREATE_STATEMENT="CREATE TABLE $BASETABLE$suffix ( CHECK ( $DIVISION_COLUMN >= DATE '$DATE' AND $DIVISION_COLUMN < DATE '$NEXT_DATE' ) ) INHERITS ($BASETABLE);"
-    INSERT_STATEMENT="INSERT INTO $BASETABLE$suffix ( SELECT * FROM $TMP_BASETABLE WHERE $DIVISION_COLUMN >= DATE '$DATE' AND $DIVISION_COLUMN < DATE '$NEXT_DATE' );"
+    ## CREATING partition tables
+    CREATE_STATEMENT="CREATE TABLE $BASETABLE$suffix ( LIKE $BASETABLE INCLUDING ALL, CHECK ( $DIVISION_COLUMN >= DATE '$DATE' AND $DIVISION_COLUMN < DATE '$NEXT_DATE' ) ) INHERITS ($BASETABLE);"
+    ## INSERTING partition values
+    INSERT_STATEMENT="INSERT INTO $BASETABLE$suffix ( SELECT * FROM $TMP_BASETABLE WHERE $DIVISION_COLUMN >= DATE '$DATE' AND $DIVISION_COLUMN < DATE '$NEXT_DATE' );" 
     
-    psql -U $DBUSER $DB -c "$CREATE_STATEMENT"
-    psql -U $DBUSER $DB -c "$INSERT_STATEMENT"
-        #psql -U postgres $DB -c "DROP TABLE $BASETABLE$suffix;"
-
+    psql -U $DBUSER $DB -c "$CREATE_STATEMENT" > /dev/null 2>&1 ||throw_ex "The partitioned sub table \"$BASETABLE$suffix\" cannot be created"
+    echo -n "[CREATE:SUB] TABLE $BASETABLE$suffix"
+    psql -U $DBUSER $DB -c "$INSERT_STATEMENT" > /dev/null ||throw_ex "Inserting data into the table \"$BASETABLE$suffix\""
+    echo " -> [INSERTED]"
+   
+    if [ $TRIGGER_FLAG -eq 1 ]
+    then
+        TRIGGER_STATEMENT_BODY="$TRIGGER_STATEMENT_BODY
+    IF ( NEW.$DIVISION_COLUMN >= DATE '$DATE' AND NEW.$DIVISION_COLUMN < DATE '$NEXT_DATE' ) THEN
+        INSERT INTO $BASETABLE$suffix VALUES (NEW.*);"
+        TRIGGER_FLAG=0
+    else
+        TRIGGER_STATEMENT_BODY="$TRIGGER_STATEMENT_BODY
+    ELSIF ( NEW.$DIVISION_COLUMN >= DATE '$DATE' AND NEW.$DIVISION_COLUMN < DATE '$NEXT_DATE' ) THEN
+        INSERT INTO $BASETABLE$suffix VALUES (NEW.*);"
+    fi
+       #psql -U postgres $DB -c "DROP TABLE $BASETABLE$suffix;"
 done
 
+## If required, you can drop tmp table after distributing values from tmp table 
 #psql -U $DBUSER $DB -c "DROP TABLE $TMP_BASETABLE;" 
 
-exit
+TRIGGER_STATEMENT="$TRIGGER_STATEMENT_START""$TRIGGER_STATEMENT_BODY""$TRIGGER_STATEMENT_END"
+echo -n "$TRIGGER_STATEMENT" | psql -U $DBUSER $DB > /dev/null ||throw_ex "The trigger \"$TRIGGER\" cannot be created" ## Exception is not working 
+echo "\n[CREATE] TRIGGER \"$TRIGGER\""
 
-STARTDATE=$(date +%Y-%m-%d -d '2 day')
-ENDDATE=$(date +%Y-%m-%d -d '3 day')
-TODAY=$(date +%Y-%m-%d)
-TOMORROW=$(date +%Y-%m-%d -d '1 day')
+# CREATE TRIGGER 
+psql -U $DBUSER $DB -c "CREATE TRIGGER $BASETABLE""_trigger BEFORE INSERT on $BASETABLE for each row execute procedure $BASETABLE""_insert_trigger();" > /dev/null ||throw_ex "The trigger \"$BASETABLE""_insert_trigger\" cannot be created "
+echo "[CREATE] TRIGGER \"$BASETABLE""_trigger\""
 
-BASETABLE="int_log_table"
-COLUMN="log_insert_time"
-TRIGGER=$BASETABLE"_insert_trigger"
-OLD_PARTITION=$BASETABLE$(date +_%Y_%m_%d -d '8 day ago')
-NEW_PARTITION=$BASETABLE$(date +_%Y_%m_%d -d '2 day')
-NEW_PARTITION_INDEX=$NEW_PARTITION\_$COLUMN\_idx
-TODAY_PARTITION=$BASETABLE$(date +_%Y_%m_%d)
-
-setup()
-{
-cat << EOF
-    BEGIN;
-        CREATE TABLE $NEW_PARTITION ( CHECK ( $COLUMN >= DATE '$STARTDATE' AND $COLUMN < DATE '$ENDDATE' ) ) INHERITS ($BASETABLE);
-    COMMIT;
-    BEGIN;
-        CREATE OR REPLACE FUNCTION $TRIGGER()
-        RETURNS TRIGGER AS \$\$
-        DECLARE
-            current_partition text;
-        BEGIN
-            current_partition:='$BASETABLE'||to_char(NEW.$COLUMN,'_yyyy_mm_dd');
-            IF ( NEW.$COLUMN >= DATE '$TODAY' AND NEW.$COLUMN < DATE '$TOMORROW' ) THEN
-                INSERT INTO $TODAY_PARTITION VALUES (NEW.*);
-            END IF;
-        RETURN NULL;
-        END;
-        \$\$
-        LANGUAGE plpgsql;
-    COMMIT;
-    BEGIN;
-        CREATE INDEX $NEW_PARTITION_INDEX ON $NEW_PARTITION($COLUMN);
-    COMMIT;
-    BEGIN;
-        DROP TABLE $OLD_PARTITION;
-    COMMIT;
-EOF
-}
-
-setup #| psql -U postgres travegodb
-
-## TRIGGER RULE EXAMPLE ##
-#echo "CREATE TRIGGER insert_int_log_table_trigger BEFORE INSERT on int_log_table for each row execute procedure int_log_table_insert_trigger();"
-
-## CREATE PARTITION EXAMPLE ##
-#echo "CREATE TABLE int_log_table_20121222 ( CHECK ( log_insert_time >= DATE '2012-12-22' AND log_insert_time < DATE '2012-12-23' ) ) INHERITS (int_log_table); "
-
-
-##### crm urchin user #####
-#CREATE TABLE urchin_user_p1 ( CHECK ( user_id >= "0" AND user_id < "40000000" ) ) INHERITS (urchin_user)  TABLESPACE "urchin_tblspc";
-#CREATE TABLE urchin_user_p2 ( CHECK ( user_id >= "40000000" AND user_id < "80000000" ) ) TABLESPACE "crm_tblspc" INHERITS (urchin_user);
-#CREATE TABLE urchin_user_p3 ( CHECK ( user_id >= "80000000" AND user_id < "120000000" ) ) TABLESPACE "crm_tblspc" INHERITS (urchin_user);
-#CREATE TABLE urchin_user_p4 ( CHECK ( user_id >= "120000000" AND user_id < "160000000" ) ) TABLESPACE "crm_tblspc" INHERITS (urchin_user);
-
-
-
-config = {_id: 'mkfrs1', members: [
-{_id: 0, host: '192.168.3.197:27017'},
-{_id: 1, host: '192.168.3.202:27017'}]}
+echo "\nThe table $BASETABLE partitioning process OK"
