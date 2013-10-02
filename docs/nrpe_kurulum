@@ -1,0 +1,13 @@
+
+
+nrpe dag depolarından şurada anlatıldığı gibi kurulabiliyor.
+
+http://h3x.no/2012/06/02/installing-nrpe-on-red-hat-6
+
+Bunun için öncelikle https://access.redhat.com/management/ adresinden var olan başka bir tüketici ve abonelik silinmeli ve aşağıda ki süreç uygulanmalı:
+
+subscription-manager register
+subscription-manager subscribe --auto
+rpm -Uhv http://apt.sw.be/redhat/el6/en/x86_64/rpmforge/RPMS/rpmforge-release-0.5.2-2.el6.rf.x86_64.rpm
+yum install nagios-nrpe
+
