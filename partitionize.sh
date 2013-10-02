@@ -8,13 +8,12 @@
 
 
 ## USER DEFINED SETTING PARAMETERS ##
-DB="warehouse_daily_test"
+DB="dbname"
 DBUSER="postgres"
-BASETABLE="actstream_action"
-DIVISION_COLUMN="timestamp"
+BASETABLE="tablename"
+DIVISION_COLUMN="created_at"
 INTERVAL="1 month"
-DEBUG=0 #DEBUG MODE
-## USER DEFINED SETTING PARAMETERS ##
+INSERT_AFTER_TABLE_CREATED=0 ## Default 0: insert datas when creating table, 1: Create all sub tables and set insert trigger. then, insert data into sub tables
 
 
 TYPE=`echo $INTERVAL | cut -d" " -f2`
@@ -26,7 +25,7 @@ END_DATE=`psql -U $DBUSER -d $DB -At -c "SELECT to_char( (SELECT MAX($DIVISION_C
 TRIGGER_FLAG=1
 
 throw_ex() {
-#if [ $? > 0 ]; then echo "ERROR: $1"; exit; fi 
+#if [ $? > 0 ]; then echo "ERROR: $1"; exit; fi
 if [ $? > 0 ]; then if [ $DEBUG -eq 0 ]; then echo "ERROR: $1"; exit; fi fi
 }
 
@@ -83,15 +82,23 @@ do
     NEXT_DATE=`eval "date --date='$DATE $INTERVAL ' +%Y-%m-%d"`
 
     ## CREATING partition tables
-    CREATE_STATEMENT="CREATE TABLE $BASETABLE$suffix ( LIKE $BASETABLE INCLUDING ALL, CHECK ( $DIVISION_COLUMN >= DATE '$DATE' AND $DIVISION_COLUMN < DATE '$NEXT_DATE' ) ) INHERITS ($BASETABLE);"
+    CREATE_STATEMENT="CREATE TABLE $BASETABLE$suffix ( LIKE $BASETABLE INCLUDING ALL, CHECK ( $DIVISION_COLUMN >= '$DATE'::timestamp with time zone AND $DIVISION_COLUMN < '$NEXT_DATE'::timestamp with time zone ) ) INHERITS ($BASETABLE);"
     ## INSERTING partition values
     INSERT_STATEMENT="INSERT INTO $BASETABLE$suffix ( SELECT * FROM $TMP_BASETABLE WHERE $DIVISION_COLUMN >= DATE '$DATE' AND $DIVISION_COLUMN < DATE '$NEXT_DATE' );"
 
     psql -U $DBUSER $DB -c "$CREATE_STATEMENT" > /dev/null 2>&1 ||throw_ex "The partitioned sub table \"$BASETABLE$suffix\" cannot be created"
-    echo -n "[CREATE:SUB] TABLE $BASETABLE$suffix"
-    psql -U $DBUSER $DB -c "$INSERT_STATEMENT" > /dev/null ||throw_ex "Inserting data into the table \"$BASETABLE$suffix\""
-    echo " -> [INSERTED]"
 
+    if [ $INSERT_AFTER_TABLE_CREATED -eq 0 ]
+        then
+        echo -n "[CREATE:SUB] TABLE $BASETABLE$suffix"
+        psql -U $DBUSER $DB -c "$INSERT_STATEMENT" > /dev/null ||throw_ex "Inserting data into the table \"$BASETABLE$suffix\""
+        echo " -> [INSERTED]"
+    else
+        echo "[CREATE:SUB] TABLE $BASETABLE$suffix"
+    fi
+    psql -U $DBUSER $DB -c "alter table $BASETABLE$suffix add FOREIGN KEY (action_object_content_type_id) REFERENCES django_content_type(id) DEFERRABLE INITIALLY DEFERRED;" > /dev/null ||throw_ex "ADDING FOREIGN KEY"
+    psql -U $DBUSER $DB -c "alter table $BASETABLE$suffix add FOREIGN KEY (actor_content_type_id) REFERENCES django_content_type(id) DEFERRABLE INITIALLY DEFERRED;" > /dev/null ||throw_ex "ADDING FOREIGN KEY"
+    psql -U $DBUSER $DB -c "alter table $BASETABLE$suffix add FOREIGN KEY (target_content_type_id) REFERENCES django_content_type(id) DEFERRABLE INITIALLY DEFERRED;" > /dev/null ||throw_ex "ADDING FOREIGN KEY"
     if [ $TRIGGER_FLAG -eq 1 ]
     then
         TRIGGER_STATEMENT_BODY="$TRIGGER_STATEMENT_BODY
@@ -106,22 +113,33 @@ do
        #psql -U postgres $DB -c "DROP TABLE $BASETABLE$suffix;"
 done
 
-## If required, you can drop tmp table after distributing values from tmp table 
-#psql -U $DBUSER $DB -c "DROP TABLE $TMP_BASETABLE;" 
+## If required, you can drop tmp table after distributing values from tmp table
+#psql -U $DBUSER $DB -c "DROP TABLE $TMP_BASETABLE;"
 
 TRIGGER_STATEMENT="$TRIGGER_STATEMENT_START""$TRIGGER_STATEMENT_BODY""$TRIGGER_STATEMENT_END"
-echo -n "$TRIGGER_STATEMENT" | psql -U $DBUSER $DB > /dev/null ||throw_ex "The trigger \"$TRIGGER\" cannot be created" ## Exception is not working 
+echo -n "$TRIGGER_STATEMENT" | psql -U $DBUSER $DB > /dev/null ||throw_ex "The trigger \"$TRIGGER\" cannot be created" ## Exception is not working
 echo "[CREATE] TRIGGER \"$TRIGGER\""
 
-# CREATE TRIGGER 
+# CREATE TRIGGER
 psql -U $DBUSER $DB -c "CREATE TRIGGER $BASETABLE""_trigger BEFORE INSERT on $BASETABLE for each row execute procedure $BASETABLE""_insert_trigger();" > /dev/null ||throw_ex "The trigger \"$BASETABLE""_insert_trigger\" cannot be created "
 echo "[CREATE] TRIGGER \"$BASETABLE""_trigger\""
 
+
+if [ $INSERT_AFTER_TABLE_CREATED -eq 1 ]
+    then
+    for DATE in $DATE_RANGE
+    do
+        echo -n "[INSERTING] The table \"$BASETABLE$suffix\""
+        get_suffix "$DATE"
+        NEXT_DATE=`eval "date --date='$DATE $INTERVAL ' +%Y-%m-%d"`
+
+        INSERT_STATEMENT="INSERT INTO $BASETABLE$suffix ( SELECT * FROM $TMP_BASETABLE WHERE $DIVISION_COLUMN >= DATE '$DATE' AND $DIVISION_COLUMN < DATE '$NEXT_DATE' );"
+        psql -U $DBUSER $DB -c "$INSERT_STATEMENT" > /dev/null ||throw_ex "Inserting data into the table \"$BASETABLE$suffix\""
+        echo " -> [INSERTED]"
+    done
+fi
+
 echo "The table $BASETABLE partitioning process OK"
 
-
-
-
-
-##  var olan partition sistemi için süre uzatımı 
-##select proname,prosrc from pg_proc where proname='part_insert_trigger';
+##  var olan partition sistemi için süre uzatımı
+##select proname,prosrc from pg_proc where proname='part_insert_trigger'
