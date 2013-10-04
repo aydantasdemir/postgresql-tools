@@ -1,0 +1,24 @@
+CREATE OR REPLACE FUNCTION desc_table(tablename text) RETURNS text AS 
+$$
+    import commands
+    currentdb = plpy.execute("SELECT current_database()")
+    status, text = commands.getstatusoutput('pg_dump -U postgres '+currentdb[0]["current_database"]+' -s  -t ' + tablename)
+    return text
+END;
+$$
+LANGUAGE plpython2u;
+
+-- SELECT desc_table('auth_user);
+
+CREATE OR REPLACE FUNCTION kill_user(username text) RETURNS integer AS
+$$
+DECLARE
+    result integer;
+BEGIN
+    EXECUTE format('SELECT count(pg_terminate_backend(pid)) from pg_stat_activity WHERE usename=%L', username ) INTO result;
+RETURN result;
+END;
+$$
+LANGUAGE plpgsql;
+
+-- SELECT kill_user('user1');
