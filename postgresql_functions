@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION desc_table(tablename text) RETURNS text AS 
+CREATE OR REPLACE FUNCTION desc_table(tablename text) RETURNS text AS
 $$
     import commands
     currentdb = plpy.execute("SELECT current_database()")
