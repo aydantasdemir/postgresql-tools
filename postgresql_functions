@@ -22,3 +22,40 @@ $$
 LANGUAGE plpgsql;
 
 -- SELECT kill_user('user1');
+
+
+CREATE OR REPLACE FUNCTION show_table_lock(tablename text) 
+RETURNS TABLE(
+    relname name, 
+    transactionid xid, 
+    mode text, 
+    g boolean, 
+    sql text, 
+    query_start timestamp with time zone, 
+    age interval
+    , pid integer
+    ) AS
+$$
+DECLARE
+    result record;
+BEGIN
+    RETURN QUERY
+        SELECT pg_class.relname,
+               pg_locks.transactionid,
+               pg_locks.mode,
+               pg_locks.granted AS "g",
+               substr(pg_stat_activity.query,1,30),
+               pg_stat_activity.query_start,
+               age(now(),pg_stat_activity.query_start) AS "age",
+               pg_stat_activity.pid
+        FROM pg_stat_activity,
+             pg_locks
+        LEFT OUTER JOIN pg_class ON (pg_locks.relation = pg_class.oid)
+        WHERE pg_locks.pid=pg_stat_activity.pid
+            AND pg_class.relname=tablename
+        ORDER BY query_start;
+END;
+$$
+LANGUAGE plpgsql;
+
+-- select * from show_table_lock('auth_user');
