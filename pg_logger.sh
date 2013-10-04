@@ -1,22 +1,26 @@
 #!/bin/bash
 
-MACHINE=$(hostname)
+LOG_PATH="/home/report/pgLogger"
+INCOMING_PATH="$LOG_PATH/incomings"
+ANALYZED_LOG_PATH="$LOG_PATH/analyzedLogs"
+DAY=$(date +%a -d 'yesterday')
+LOG="postgresql-$DAY.log"
+LINK="/var/www/logs"
+USER="root"
 VERSION="9.2"
-LOGPATH="/var/lib/pgsql/$VERSION/data/pg_log"
-#LOGPATH="/var/lib/postgresql/$VERSION/main/pg_log"
-LOG="postgresql-$(date +%a -d 'yesterday').log"
-LOGDIR="/home/travego/pgLogger/pglogs"
-OUTPUTDIR="/home/travego/pgLogger/finished"
-OUTPUTLOG="$MACHINE-$LOG.html"
-HOST="travego@10.22.2.110:"
-HOST="root@tarantino.vpn.akinon.net:"
-HOST="erkin.cakar@kirsten.vpn.akinon.net:"
+PG_DATA="/var/lib/pgsql/$VERSION/data"
 
-echo $LOGPATH/$LOG
-echo $LOGDIR/$LOG
- 
-#mkdir -p $OUTPUTDIR
+SERVER_LIST="server1 server2 server3"
 
-rsync -av $HOST$LOGPATH/$LOG $LOGDIR/$LOG
-pgfouine -file $LOGDIR/$LOG -logtype stderr > $OUTPUTDIR/$OUTPUTLOG
+for SERVER_NAME in $SERVER_LIST
+do
+    SERVER=$SERVER_NAME".markafoni.net"
+    echo -n "\nServer: $SERVER\n"
+    /usr/bin/scp "$USER@$SERVER:$PG_DATA/pg_log/$LOG" "$INCOMING_PATH/$SERVER_NAME-$LOG"
+    echo "--> pgFouine is starting"
+    pgfouine -file "$INCOMING_PATH/$SERVER_NAME-$LOG" -logtype stderr > "$ANALYZED_LOG_PATH/$SERVER_NAME-$DAY.html" 2> /dev/null
+    echo "--> pgFoiune Completed"
+    cp "$ANALYZED_LOG_PATH/$SERVER_NAME-$DAY.html" "$LINK/$SERVER_NAME-$DAY.html"
+    echo "172.18.140.17/logs/$SERVER_NAME-$DAY.html"
+done
 
