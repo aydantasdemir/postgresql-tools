@@ -14,7 +14,7 @@ SERVER_LIST="server1 server2 server3"
 
 for SERVER_NAME in $SERVER_LIST
 do
-    SERVER=$SERVER_NAME".markafoni.net"
+    SERVER=$SERVER_NAME".domain.vpn"
     echo -n "\nServer: $SERVER\n"
     /usr/bin/scp "$USER@$SERVER:$PG_DATA/pg_log/$LOG" "$INCOMING_PATH/$SERVER_NAME-$LOG"
     echo "--> pgFouine is starting"
